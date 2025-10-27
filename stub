@@ -1,4 +1,4 @@
-#################################### Value.yaml #############################
+#################################### Stub service Value.yaml #############################
 # Default values for epay_stubs_service
 replicaCount: 1
 #
