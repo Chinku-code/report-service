@@ -1,0 +1,140 @@
+# Default values for epay_stubs_service
+replicaCount: 1
+#
+image:
+  repository: "epaynonprod-registry-quay-quay-enterprise.apps.preprod.epay.sbi/microservices/{{ .Chart.Name }}"
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  #tag: "v-release-ESB-89_StubsPaymentService-20250925121843"
+  tag: "v-release-ESB-89_StubsPaymentService-20250925121843"
+
+env:
+  - name: JAVA_TOOL_OPTIONS
+    value: "-Xms512m -Xmx1024m" 
+
+imagePullSecrets: 
+  - name: microservices-perf-pull-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 9099
+
+configMap: 
+  additionalLabels: {}
+  annotations: {}
+  nameSuffix: "config"
+  data: true
+
+namespace: perf-simulators
+gatewayName: perf-istio-system/perf-gateway
+virtualServiceName: stubsservice
+serviceName: stubsservice
+prefixName: /api/stubs/payments/v1/
+servicePort: 9099
+gatewayPort: 80
+gatewayHost: "perf.epay.sbi"  
+
+resources:
+  requests:
+    memory: "2Gi"
+    cpu: "2"
+  limits:
+    memory: "4Gi"
+    cpu: "3"
+
+ingress: {}
+
+# Enable health probes for proper HPA functioning
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: "/api/stubs/payments/v1/actuator/health"
+    port: 9099
+    scheme: HTTP
+  initialDelaySeconds: 20
+  periodSeconds: 5
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: "/api/stubs/payments/v1/actuator/health"
+    port: 9099
+    scheme: HTTP
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+# HPA Configuration
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
+autoscaling:
+  enabled: true
+
+# Mount application.properties configmap
+volumes:
+  - name: config
+    configMap:
+      name: stubs-config
+
+
+volumeMounts:
+  - name: config
+    mountPath: "/opt/gradle"
+    readOnly: true
+
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+#
+# Add any values that were hardcoded in the deployment.yaml template (except configmap data)
+# For example:
+# image:
+#   repository: myrepo/image
+#   tag: "v-release-ESB-89_StubsPaymentService-20250925121843"
+#   pullPolicy: IfNotPresent
+# service:
+#   port: 8080
+# resources:
+#   limits:
+#     cpu: 100m
+#
+#     memory: 128Mi
+#   requests:
+#     cpu: 100m
+##    memory: 128Mi
