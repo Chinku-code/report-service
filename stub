@@ -1,3 +1,4 @@
+#################################### Value.yaml #############################
 # Default values for epay_stubs_service
 replicaCount: 1
 #
@@ -138,3 +139,296 @@ affinity: {}
 #   requests:
 #     cpu: 100m
 ##    memory: 128Mi
+
+
+**********************************deployment.yaml ************************************
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "Epay_Stubs_Service.fullname" . }}
+  labels:
+    {{- include "Epay_Stubs_Service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "Epay_Stubs_Service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "{{ .Values.service.port }}"
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "Epay_Stubs_Service.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "Epay_Stubs_Service.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ tpl .Values.image.repository $ }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+          - name: SPRING_CONFIG_LOCATION
+            value: file:/opt/gradle/
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.prefixName }}actuator/health
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.prefixName }}actuator/health
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
+            successThreshold: 1
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.volumeMounts }}
+          volumeMounts:
+            - name: config
+              mountPath: "/opt/gradle"
+          {{- end }}    
+      {{- if .Values.volumes }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-{{ .Values.configMap.nameSuffix }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+********************************** opretionservice, value.yaml**********************************
+
+# Default values for epaytransactionservice.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+## Default values for epaytransactionservice
+replicaCount: 1
+
+image:
+  repository: "epaynonprod-registry-quay-quay-enterprise.apps.preprod.epay.sbi/microservices/{{ .Chart.Name }}"
+  pullPolicy: IfNotPresent
+  tag: "v0.1.54"
+
+imagePullSecrets:
+  - name: microservices-perf-pull-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 9097
+
+# Namespace and gateway configuration
+namespace: perf-rns
+gatewayName: perf-istio-system/epay-perf-gateway
+virtualServiceName: ops-operationsservice
+serviceName: ops-operationsservice
+prefixName: /api/rns/v1
+servicePort: 9097
+gatewayPort: 80
+gatewayHost: "perf.epay.sbi"
+
+# ConfigMap configuration
+configMap: 
+  additionalLabels:
+    # ...
+  annotations:
+    # ...
+  nameSuffix: "config"
+
+resources:
+  requests:
+    memory: "2Gi"
+    cpu: "2"
+  limits:
+    memory: "4Gi"
+    cpu: "3"
+ingress: {}
+
+# Disable health probes for perf
+readinessProbe:
+  enabled: false
+livenessProbe:
+  enabled: false
+
+autoscaling: {}
+
+autoscaling: {}
+
+# Additional volumes on the output Deployment definition.
+volumes:
+  - name: config
+    configMap:
+      name: ops-config
+
+volumeMounts:
+  - name: config
+    mountPath: "/opt/gradle"
+    readOnly: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# HPA Configuration
+hpa:
+  enabled: true
+  minReplicas: 10
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+*************************************** deployment.yaml*******************************
+
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "Epay_Operations_Service.fullname" . }}
+  labels:
+    {{- include "Epay_Operations_Service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "Epay_Operations_Service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "Epay_Operations_Service.labels" . | nindent 8 }}
+        sidecar.istio.io/inject: 'true'
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "Epay_Operations_Service.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ tpl .Values.image.repository $ }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_CONFIG_LOCATION
+              value: file:/opt/gradle/
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.prefixName }}actuator/health
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.prefixName }}/actuator/health
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
+            successThreshold: 1
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.volumeMounts }}
+          volumeMounts:
+            - mountPath: /opt/gradle
+              name: config
+          {{- end }}        
+      {{- if .Values.volumes }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-{{ .Values.configMap.nameSuffix }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+
