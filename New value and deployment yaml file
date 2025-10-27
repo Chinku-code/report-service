@@ -1,4 +1,6 @@
-# Default values for epayoperationservice
+# ===========================================
+# values.yaml for Epay_Operations_Service
+# ===========================================
 
 replicaCount: 1
 
@@ -19,7 +21,9 @@ serviceAccount:
   annotations: {}
   name: ""
 
-podAnnotations: {}
+podAnnotations:
+  sidecar.istio.io/inject: "true"   # ✅ enables automatic sidecar injection
+
 podLabels: {}
 
 podSecurityContext: {}
@@ -29,15 +33,17 @@ service:
   type: ClusterIP
   port: 9097
 
+# Namespace and gateway configuration
 namespace: perf-rns
 gatewayName: perf-istio-system/epay-perf-gateway
 virtualServiceName: ops-operationsservice
 serviceName: ops-operationsservice
-prefixName: /api/rns/v1
+prefixName: /api/rns/v1/
 servicePort: 9097
 gatewayPort: 80
 gatewayHost: "perf.epay.sbi"
 
+# ConfigMap configuration
 configMap: 
   additionalLabels: {}
   annotations: {}
@@ -58,9 +64,7 @@ readinessProbe:
 livenessProbe:
   enabled: false
 
-autoscaling: {}
-
-# HPA Configuration
+# Horizontal Pod Autoscaler
 hpa:
   enabled: true
   minReplicas: 10
@@ -95,24 +99,11 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# ---------------------------------------------------
-# ✅ Istio sidecar configuration (added section)
-# ---------------------------------------------------
-istio:
-  enabled: true
-  proxyImage: "docker.io/istio/proxyv2:1.22.1"   # Match your cluster Istio version
-  resources:
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
+&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
-
-
-
-&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+# ===========================================
+# deployment.yaml for Epay_Operations_Service
+# ===========================================
 
 apiVersion: apps/v1
 kind: Deployment
@@ -121,7 +112,7 @@ metadata:
   labels:
     {{- include "Epay_Operations_Service.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not .Values.hpa.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
@@ -130,12 +121,9 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar.istio.io/inject: "false"  # disable auto injection since we inject manually
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- toYaml .Values.podAnnotations | nindent 8 }}   # ✅ enable sidecar injection
       labels:
-        {{- include "Epay_Operations_Service.labels" . | nindent 8 }}
+        {{- include "Epay_Operations_Service.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -148,77 +136,43 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        # -------------------------------
-        # ✅ Main Application Container
-        # -------------------------------
         - name: {{ .Chart.Name }}
           image: "{{ tpl .Values.image.repository $ }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          env:
-            - name: SPRING_CONFIG_LOCATION
-              value: file:/opt/gradle/
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+          env:
+            - name: SPRING_CONFIG_LOCATION
+              value: file:/opt/gradle/
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.prefixName }}actuator/health
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.prefixName }}actuator/health
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml .Values.volumeMounts | nindent 12 }}
           {{- end }}
-
-        # -------------------------------
-        # ✅ Manually Injected Istio Sidecar
-        # -------------------------------
-        {{- if .Values.istio.enabled }}
-        - name: istio-proxy
-          image: "{{ .Values.istio.proxyImage }}"
-          imagePullPolicy: IfNotPresent
-          args:
-            - proxy
-            - sidecar
-            - --domain
-            - $(POD_NAMESPACE).svc.cluster.local
-          env:
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-          resources:
-            {{- toYaml .Values.istio.resources | nindent 12 }}
-        {{- end }}
       {{- if .Values.volumes }}
       volumes:
         {{- toYaml .Values.volumes | nindent 8 }}
       {{- end }}
-
-
-istio issue************************
-
-Events:
-  Type     Reason          Age                From               Message
-  ----     ------          ----               ----               -------
-  Normal   Scheduled       85s                default-scheduler  Successfully assigned perf-rns/ops-operationsservice-5978585955-t6dtt to gemfirecache5.preprod.epay.sbi
-  Normal   AddedInterface  85s                multus             Add eth0 [172.16.61.123/23] from ovn-kubernetes
-  Normal   Pulled          85s                kubelet            Container image "epaynonprod-registry-quay-quay-enterprise.apps.preprod.epay.sbi/microservices/operationsservice:v0.1.54" already present on machine
-  Normal   Created         85s                kubelet            Created container operationsservice
-  Normal   Started         85s                kubelet            Started container operationsservice
-  Normal   Pulling         43s (x3 over 85s)  kubelet            Pulling image "docker.io/istio/proxyv2:1.22.1"
-  Warning  Failed          43s (x3 over 85s)  kubelet            Failed to pull image "docker.io/istio/proxyv2:1.22.1": pinging container registry registry-1.docker.io: Get "https://registry-1.docker.io/v2/": dial tcp: lookup registry-1.docker.io on 10.189.53.150:53: server misbehaving
-  Warning  Failed          43s (x3 over 85s)  kubelet            Error: ErrImagePull
-  Normal   BackOff         5s (x6 over 85s)   kubelet            Back-off pulling image "docker.io/istio/proxyv2:1.22.1"
-  Warning  Failed          5s (x6 over 85s)   kubelet            Error: ImagePullBackOff
-[osuser@bastion ~]$ oc get istio
-NAME             REVISIONS   READY   IN USE   ACTIVE REVISION   STATUS    VERSION        AGE
-perf-istio       1           1       1        perf-istio        Healthy   v1.24.4        108d
-pre-prod-istio   1           1       1        pre-prod-istio    Healthy   v1.24-latest   52d
-[osuser@bastion ~]$ ^C
-[osuser@bastion ~]$
-
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
