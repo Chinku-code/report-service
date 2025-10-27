@@ -198,3 +198,27 @@ spec:
       volumes:
         {{- toYaml .Values.volumes | nindent 8 }}
       {{- end }}
+
+
+istio issue************************
+
+Events:
+  Type     Reason          Age                From               Message
+  ----     ------          ----               ----               -------
+  Normal   Scheduled       85s                default-scheduler  Successfully assigned perf-rns/ops-operationsservice-5978585955-t6dtt to gemfirecache5.preprod.epay.sbi
+  Normal   AddedInterface  85s                multus             Add eth0 [172.16.61.123/23] from ovn-kubernetes
+  Normal   Pulled          85s                kubelet            Container image "epaynonprod-registry-quay-quay-enterprise.apps.preprod.epay.sbi/microservices/operationsservice:v0.1.54" already present on machine
+  Normal   Created         85s                kubelet            Created container operationsservice
+  Normal   Started         85s                kubelet            Started container operationsservice
+  Normal   Pulling         43s (x3 over 85s)  kubelet            Pulling image "docker.io/istio/proxyv2:1.22.1"
+  Warning  Failed          43s (x3 over 85s)  kubelet            Failed to pull image "docker.io/istio/proxyv2:1.22.1": pinging container registry registry-1.docker.io: Get "https://registry-1.docker.io/v2/": dial tcp: lookup registry-1.docker.io on 10.189.53.150:53: server misbehaving
+  Warning  Failed          43s (x3 over 85s)  kubelet            Error: ErrImagePull
+  Normal   BackOff         5s (x6 over 85s)   kubelet            Back-off pulling image "docker.io/istio/proxyv2:1.22.1"
+  Warning  Failed          5s (x6 over 85s)   kubelet            Error: ImagePullBackOff
+[osuser@bastion ~]$ oc get istio
+NAME             REVISIONS   READY   IN USE   ACTIVE REVISION   STATUS    VERSION        AGE
+perf-istio       1           1       1        perf-istio        Healthy   v1.24.4        108d
+pre-prod-istio   1           1       1        pre-prod-istio    Healthy   v1.24-latest   52d
+[osuser@bastion ~]$ ^C
+[osuser@bastion ~]$
+
